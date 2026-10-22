@@ -145,3 +145,13 @@ details.code pre, .journal, .rapport {
   .barre-ligne { grid-template-columns: 1fr; gap: 4px; }
   .graphe { height: 260px; }
 }
+
+/* étape 1 : exploration */
+.sous-partie { margin: 22px 0 4px; font-size: 1.1rem; }
+.tableau-defilant { overflow-x: auto; border: 1px solid var(--bord); border-radius: 8px; }
+.tableau { border-collapse: collapse; font-size: .82rem; white-space: nowrap; width: 100%; }
+.tableau th, .tableau td { padding: 4px 8px; border-bottom: 1px solid var(--bord); text-align: right; }
+.tableau thead th { background: #f1f5f9; position: sticky; top: 0; }
+.tableau tbody th { text-align: left; background: #f8fafc; }
+.tableau.stats { font-size: .92rem; }
+.tableau.stats td, .tableau.stats th { text-align: left; white-space: normal; }

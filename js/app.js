@@ -3,8 +3,9 @@ import {
   chargerDonnees, battement, moyenneClasse, decouper, compterClasses, roles, chercher, lireCSV, VALIDATION,
 } from "./donnees.js";
 import {
-  initCalcul, construire, parametres, codeKeras, tenseurs, predire, predireSignal, chargerPretraine,
+  initCalcul, construire, parametres, tenseurs, predire, predireSignal, chargerPretraine,
 } from "./modele.js";
+import { initExploration } from "./exploration.js";
 import { BLEU, ROUGE, GRIS, courbeECG, tracerECG, courbeApprentissage, viderApprentissage } from "./graphiques.js";
 
 const $ = (s) => document.querySelector(s);
@@ -31,8 +32,10 @@ const G = {};          // graphiques Chart.js
 function allerA(k) {
   $$("main > section").forEach((s) => (s.hidden = s.id !== `etape-${k}`));
   $$("#etapes button").forEach((b) => b.setAttribute("aria-current", b.dataset.etape === String(k) ? "step" : "false"));
-  $(`#etapes button[data-etape="${k}"]`).scrollIntoView({ inline: "center", block: "nearest" });
-  history.replaceState(null, "", `#etape-${k}`);
+  // Centre l'étape active dans la barre (mobile) sans faire défiler la page.
+  const nav = $("#etapes"), actif = $(`#etapes button[data-etape="${k}"]`);
+  nav.scrollLeft = actif.offsetLeft - (nav.clientWidth - actif.clientWidth) / 2;
+  history.replaceState(null, "", `#etape=${k}`);   // pas « #etape-k » : le navigateur sauterait à la section
   if (k === 4) majResumeConfig();
   window.scrollTo({ top: 0 });
 }
@@ -126,7 +129,6 @@ function majModele() {
   ];
   $("#schema").innerHTML = blocs.join('<span class="fleche">→</span>');
   $("#nb-params").textContent = nombre(total);
-  $("#code-modele").textContent = codeKeras(S.lstm, S.dense);
   majResumeConfig();
 }
 
@@ -246,7 +248,7 @@ async function lancerEntrainement() {
   await installerModele({ model, dec, lstm, dense, origine: "votre modèle", epochs: faites });
   $("#barre-progression").style.width = "100%";
   $("#etat-entrainement").innerHTML = `✔ Modèle entraîné en ${duree} s (${faites} epoch${faites > 1 ? "s" : ""}${S.arret ? ", arrêté" : ""}).
-    Précision de test : <strong>${pct(precisionTest())}</strong>. <a href="#etape-5" data-aller="5">Voir l'évaluation →</a>`;
+    Précision de test : <strong>${pct(precisionTest())}</strong>. <a href="#etape=5" data-aller="5">Voir l'évaluation →</a>`;
 }
 
 async function utiliserPretraine() {
@@ -276,7 +278,7 @@ async function utiliserPretraine() {
   await installerModele({ model, dec, lstm: info.lstm, dense: info.dense, origine: "modèle pré-entraîné (notebook)", epochs: info.epochs });
   $("#barre-progression").style.width = "100%";
   $("#etat-entrainement").innerHTML = `✔ Modèle pré-entraîné chargé (découpage du notebook, ${info.epochs} epochs).
-    Précision de test : <strong>${pct(precisionTest())}</strong>. <a href="#etape-5" data-aller="5">Voir l'évaluation →</a>`
+    Précision de test : <strong>${pct(precisionTest())}</strong>. <a href="#etape=5" data-aller="5">Voir l'évaluation →</a>`
     + (ecart > 1e-3 ? ` <span class="arythmie">(écart inattendu avec Keras : ${ecart.toExponential(1)})</span>` : "");
 }
 
@@ -500,6 +502,7 @@ async function demarrer() {
     S.D = D;
     S.moyennes = { 0: moyenneClasse(D, 0), 1: moyenneClasse(D, 1) };
     initDonnees();
+    initExploration(D);
     initSeparation();
     initModele();
     initEntrainement();

@@ -34,15 +34,39 @@
 
 <!-- ======================================================= 1. Données -->
 <section id="etape-1" hidden>
-  <h2>1. Les données ECG</h2>
+  <h2>1. Explorer les données ECG</h2>
   <p>Le jeu de données public <strong>ECG5000</strong> contient des battements cardiaques déjà isolés et recentrés.
      Chaque battement est un <strong>signal de 140 points dans le temps</strong>, étiqueté
-     <span class="normal">normal (1)</span> ou <span class="arythmie">anormal / arythmie (0)</span>.</p>
+     <span class="normal">normal (1)</span> ou <span class="arythmie">anormal / arythmie (0)</span>.
+     Avant d'entraîner un modèle, on regarde toujours les données.</p>
   <div class="tuiles">
     <div class="tuile"><span class="valeur" id="nb-total">–</span><span>battements</span></div>
     <div class="tuile normal"><span class="valeur" id="nb-normal">–</span><span>normaux</span></div>
     <div class="tuile arythmie"><span class="valeur" id="nb-arythmie">–</span><span>arythmies</span></div>
   </div>
+
+  <h3 class="sous-partie">1.1 Le tableau de données</h3>
+  <div class="carte">
+    <p>Chaque <strong>ligne</strong> est un battement, chaque <strong>colonne</strong> un instant (t0 à t139) ;
+       la dernière colonne est l'étiquette. Voici les premières lignes :</p>
+    <div class="tableau-defilant"><table class="tableau" id="apercu"></table></div>
+    <div class="actions">
+      <button id="telecharger-csv">⬇ Télécharger le jeu complet (CSV)</button>
+      <button id="telecharger-excel">⬇ Version pour Excel (français)</button>
+      <span class="note">4 998 lignes × 141 colonnes, valeurs arrondies à 4 décimales.</span>
+    </div>
+  </div>
+
+  <h3 class="sous-partie">1.2 Statistiques descriptives</h3>
+  <div class="carte">
+    <p>Pour chaque battement, on calcule quelques caractéristiques simples, puis leur <strong>moyenne ± écart-type</strong> dans chaque classe.</p>
+    <div class="tableau-defilant"><table class="tableau stats" id="stats"></table></div>
+    <p class="note">Le <strong>d de Cohen</strong> mesure l'écart entre les deux moyennes en nombre d'écarts-types :
+       au-delà de 0,8 la différence est grande. À noter : dans ECG5000, chaque battement a été <strong>normalisé</strong>
+       (moyenne 0, écart-type 1) ; les amplitudes ne sont donc pas en millivolts.</p>
+  </div>
+
+  <h3 class="sous-partie">1.3 Observer des battements</h3>
   <div class="carte">
     <div class="graphe"><canvas id="graphe-donnees"></canvas></div>
     <div class="actions">
@@ -51,15 +75,35 @@
       <label><input type="checkbox" id="moyennes-donnees"> Afficher le battement moyen de chaque classe</label>
     </div>
   </div>
-  <p class="a-vous">✍️ <strong>À vous :</strong> quelles différences voyez-vous entre un battement normal et une arythmie ?
-     Sont-elles toujours aussi nettes ? Tirez plusieurs battements au hasard.</p>
-  <details class="code"><summary>Le code correspondant dans le notebook</summary>
-<pre>df = pd.read_csv('https://storage.googleapis.com/download.tensorflow.org/data/ecg.csv', header=None)
-X = data[:, :-1].astype('float32')   # le signal : 140 points par battement
-y = data[:, -1].astype(int)          # 1 = normal, 0 = arythmie
 
-plt.plot(X[y==1][0], label='Normal')
-plt.plot(X[y==0][0], label='Arythmie')</pre></details>
+  <h3 class="sous-partie">1.4 La variabilité dans chaque classe</h3>
+  <div class="carte">
+    <p>À gauche, 40 battements de chaque classe superposés. À droite, le battement <strong>moyen</strong> (trait plein)
+       et la zone <strong>moyenne ± 1 écart-type</strong> (zone colorée) : plus la zone est large, plus les battements varient.</p>
+    <div class="deux-colonnes">
+      <div class="graphe moyen"><canvas id="graphe-superposition"></canvas></div>
+      <div class="graphe moyen"><canvas id="graphe-bande"></canvas></div>
+    </div>
+    <div class="actions"><button id="autres-battements">Tirer 40 autres battements</button></div>
+  </div>
+
+  <h3 class="sous-partie">1.5 Où les deux classes se distinguent-elles ?</h3>
+  <div class="carte">
+    <p>Distribution d'une caractéristique dans chaque classe. Si les deux histogrammes se chevauchent peu,
+       cette caractéristique suffit presque à séparer normaux et arythmies.</p>
+    <div class="reglages">
+      <label class="reglage">Caractéristique
+        <select id="caracteristique"></select></label>
+      <label class="reglage" id="reglage-instant">Instant t = <strong><output id="instant-val">130</output></strong>
+        <input type="range" id="instant" min="0" max="139" value="130"></label>
+    </div>
+    <div class="graphe moyen"><canvas id="graphe-histo"></canvas></div>
+    <p class="note" id="chevauchement"></p>
+  </div>
+
+  <p class="a-vous">✍️ <strong>À vous :</strong> quelles différences voyez-vous entre un battement normal et une arythmie ?
+     À quel moment du battement les deux classes se distinguent-elles le mieux ? Une seule caractéristique
+     suffit-elle à les séparer parfaitement ?</p>
   <div class="suite"><button class="primaire" data-aller="2">Étape suivante : séparer les données →</button></div>
 </section>
 
@@ -82,10 +126,6 @@ plt.plot(X[y==0][0], label='Arythmie')</pre></details>
        Le découpage est <strong>stratifié</strong> : chaque ensemble garde la même proportion de normaux et d'arythmies.</p>
   </div>
   <p class="a-vous">✍️ <strong>À vous :</strong> pourquoi ne faut-il surtout pas évaluer le modèle sur les battements qui ont servi à l'entraîner ?</p>
-  <details class="code"><summary>Le code correspondant dans le notebook</summary>
-<pre>Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
-Xtr3 = Xtr[..., None]   # format attendu par un LSTM : (battements, temps, 1 variable)
-Xte3 = Xte[..., None]</pre></details>
   <div class="suite"><button data-aller="1">← Données</button><button class="primaire" data-aller="3">Étape suivante : le modèle →</button></div>
 </section>
 
@@ -109,8 +149,6 @@ Xte3 = Xte[..., None]</pre></details>
   </div>
   <p class="a-vous">✍️ <strong>À vous :</strong> à votre avis, un modèle avec plus de paramètres sera-t-il forcément meilleur ?
      Vous pourrez tester à l'étape suivante.</p>
-  <details class="code" open><summary>Le code correspondant dans le notebook (mis à jour selon vos choix)</summary>
-<pre id="code-modele"></pre></details>
   <div class="suite"><button data-aller="2">← Séparation</button><button class="primaire" data-aller="4">Étape suivante : entraîner →</button></div>
 </section>
 
@@ -145,8 +183,6 @@ Xte3 = Xte[..., None]</pre></details>
   </div>
   <p class="a-vous">✍️ <strong>À vous :</strong> la précision de validation suit-elle celle d'entraînement ?
      Que se passe-t-il avec une vitesse d'apprentissage de 0,01 ? avec 1 seule epoch ? avec 8 neurones LSTM ?</p>
-  <details class="code"><summary>Le code correspondant dans le notebook</summary>
-<pre>history = model.fit(Xtr3, ytr, validation_split=0.1, epochs=10, batch_size=64)</pre></details>
   <div class="suite"><button data-aller="3">← Modèle</button><button class="primaire" data-aller="5">Étape suivante : évaluer →</button></div>
 </section>
 
@@ -185,11 +221,6 @@ Xte3 = Xte[..., None]</pre></details>
   </div>
   <p class="a-vous">✍️ <strong>À vous :</strong> pourquoi un <strong>faux négatif</strong> (arythmie prédite normale) est-il plus grave
      qu'un faux positif ? Comment faut-il bouger le seuil pour en avoir moins ? Qu'est-ce qu'on y perd ?</p>
-  <details class="code"><summary>Le code correspondant dans le notebook</summary>
-<pre>proba = model.predict(Xte3).ravel()
-pred = (proba > 0.5).astype(int)
-print(classification_report(yte, pred, target_names=['Arythmie (0)', 'Normal (1)']))
-cm = confusion_matrix(yte, pred)</pre></details>
   <div class="suite"><button data-aller="4">← Entraînement</button><button class="primaire" data-aller="6">Étape suivante : tester un ECG →</button></div>
 </section>
 
@@ -222,10 +253,6 @@ cm = confusion_matrix(yte, pred)</pre></details>
   </div>
   <p class="a-vous">✍️ <strong>À vous :</strong> analysez les ECG fournis par l'enseignant. Le modèle se trompe-t-il ?
      Sur quels battements hésite-t-il (probabilité proche du seuil) ?</p>
-  <details class="code"><summary>Le code correspondant dans le notebook</summary>
-<pre>i = 7   # &lt;-- change cet indice
-p = model.predict(Xte3[i:i+1]).ravel()[0]
-pred_lbl = 'NORMAL' if p &gt; 0.5 else 'ARYTHMIE'</pre></details>
   <div class="suite"><button data-aller="5">← Évaluation</button><button class="primaire" data-aller="7">Étape suivante : questions →</button></div>
 </section>
 

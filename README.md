@@ -7,9 +7,9 @@ se fait dans le navigateur de chaque étudiant** (TensorFlow.js) : aucun serveur
 
 | Étape | Contenu | Cellules du notebook |
 |---|---|---|
-| 1. Données | ECG5000, répartition des classes, battements normaux / arythmies, moyennes | 2 à 6 |
+| 1. Données | tableau et téléchargement CSV, statistiques descriptives par classe, battements, variabilité (moyenne ± écart-type), histogrammes des caractéristiques | 2 à 6 |
 | 2. Séparation | découpage stratifié entraînement / validation / test, proportion réglable | 7 et 8 |
-| 3. Modèle | taille du LSTM et de la couche Dense, schéma, nombre de paramètres, code Keras | 9 et 10 |
+| 3. Modèle | taille du LSTM et de la couche Dense, schéma, nombre de paramètres | 9 et 10 |
 | 4. Entraînement | epochs, batch, vitesse d'apprentissage, courbes en direct ; ou modèle pré-entraîné | 11 à 13 |
 | 5. Évaluation | `classification_report`, matrice de confusion, seuil réglable, exemples de faux négatifs / positifs | 14 et 15 |
 | 6. Tester un ECG | dépôt du fichier CSV fourni par l'enseignant, ou battement n° i du test | 16 et 17 |

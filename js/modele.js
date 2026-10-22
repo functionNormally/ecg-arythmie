@@ -35,18 +35,6 @@ export function parametres(lstm, dense) {
   return { couches, total: couches.reduce((s, c) => s + c.n, 0) };
 }
 
-export function codeKeras(lstm, dense) {
-  return [
-    "model = models.Sequential([",
-    "    layers.Input(shape=(X.shape[1], 1)),",
-    `    layers.LSTM(${lstm}),`,
-    ...(dense > 0 ? [`    layers.Dense(${dense}, activation='relu'),`] : []),
-    "    layers.Dense(1, activation='sigmoid'),   # proba d'être 'normal'",
-    "])",
-    "model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])",
-  ].join("\n");
-}
-
 function tenseurX(D, indices) {
   const buf = new Float32Array(indices.length * D.T);
   indices.forEach((i, k) => buf.set(battement(D, i), k * D.T));

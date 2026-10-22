@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECG et LSTM : détecter une arythmie</title>
+  <meta name="description" content="TP interactif : entraîner un réseau de neurones récurrent (LSTM) à détecter une arythmie dans un ECG, directement dans le navigateur.">
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/tf.min.js"></script>
+  <script src="vendor/tf-backend-wasm.min.js"></script>
+  <script src="vendor/chart.umd.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+<header class="entete">
+  <div class="contenu">
+    <h1>🫀 Détecter une arythmie dans un ECG avec un réseau de neurones (LSTM)</h1>
+    <p class="sous-titre">TP Compétence Transversale IA · L3 Sciences de la Vie · parcours BPN</p>
+    <p class="statut" id="statut">Chargement des données et du moteur de calcul…</p>
+  </div>
+</header>
+
+<nav class="etapes" id="etapes" aria-label="Étapes du TP">
+  <button data-etape="1">1. Données</button>
+  <button data-etape="2">2. Séparation</button>
+  <button data-etape="3">3. Modèle</button>
+  <button data-etape="4">4. Entraînement</button>
+  <button data-etape="5">5. Évaluation</button>
+  <button data-etape="6">6. Tester un ECG</button>
+  <button data-etape="7">7. Questions</button>
+</nav>
+
+<main class="contenu">
+
+<!-- ======================================================= 1. Données -->
+<section id="etape-1" hidden>
+  <h2>1. Les données ECG</h2>
+  <p>Le jeu de données public <strong>ECG5000</strong> contient des battements cardiaques déjà isolés et recentrés.
+     Chaque battement est un <strong>signal de 140 points dans le temps</strong>, étiqueté
+     <span class="normal">normal (1)</span> ou <span class="arythmie">anormal / arythmie (0)</span>.</p>
+  <div class="tuiles">
+    <div class="tuile"><span class="valeur" id="nb-total">–</span><span>battements</span></div>
+    <div class="tuile normal"><span class="valeur" id="nb-normal">–</span><span>normaux</span></div>
+    <div class="tuile arythmie"><span class="valeur" id="nb-arythmie">–</span><span>arythmies</span></div>
+  </div>
+  <div class="carte">
+    <div class="graphe"><canvas id="graphe-donnees"></canvas></div>
+    <div class="actions">
+      <button id="hasard-normal">Un battement normal au hasard</button>
+      <button id="hasard-arythmie">Une arythmie au hasard</button>
+      <label><input type="checkbox" id="moyennes-donnees"> Afficher le battement moyen de chaque classe</label>
+    </div>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> quelles différences voyez-vous entre un battement normal et une arythmie ?
+     Sont-elles toujours aussi nettes ? Tirez plusieurs battements au hasard.</p>
+  <details class="code"><summary>Le code correspondant dans le notebook</summary>
+<pre>df = pd.read_csv('https://storage.googleapis.com/download.tensorflow.org/data/ecg.csv', header=None)
+X = data[:, :-1].astype('float32')   # le signal : 140 points par battement
+y = data[:, -1].astype(int)          # 1 = normal, 0 = arythmie
+
+plt.plot(X[y==1][0], label='Normal')
+plt.plot(X[y==0][0], label='Arythmie')</pre></details>
+  <div class="suite"><button class="primaire" data-aller="2">Étape suivante : séparer les données →</button></div>
+</section>
+
+<!-- ======================================================= 2. Séparation -->
+<section id="etape-2" hidden>
+  <h2>2. Séparer entraînement, validation et test</h2>
+  <p>Le modèle <strong>apprend</strong> sur une partie des données, et on mesure ensuite sa performance sur une partie qu'il
+     n'a <strong>jamais vue</strong> (le <em>test</em>) : c'est ce qui indique s'il sait <strong>généraliser</strong>.
+     Pendant l'apprentissage, 10 % des données d'entraînement servent de <em>validation</em> pour surveiller les progrès.</p>
+  <div class="carte">
+    <label class="reglage">Proportion de test : <strong><output id="test-size-val">20 %</output></strong>
+      <input type="range" id="test-size" min="10" max="50" step="5" value="20"></label>
+    <div class="actions">
+      <button id="nouveau-tirage">Nouveau tirage aléatoire</button>
+      <button id="tirage-notebook">Revenir au découpage du notebook</button>
+      <span class="note" id="note-decoupage"></span>
+    </div>
+    <div id="barres-decoupage" class="barres"></div>
+    <p class="legende"><span class="pastille normal"></span> normal <span class="pastille arythmie"></span> arythmie.
+       Le découpage est <strong>stratifié</strong> : chaque ensemble garde la même proportion de normaux et d'arythmies.</p>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> pourquoi ne faut-il surtout pas évaluer le modèle sur les battements qui ont servi à l'entraîner ?</p>
+  <details class="code"><summary>Le code correspondant dans le notebook</summary>
+<pre>Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)
+Xtr3 = Xtr[..., None]   # format attendu par un LSTM : (battements, temps, 1 variable)
+Xte3 = Xte[..., None]</pre></details>
+  <div class="suite"><button data-aller="1">← Données</button><button class="primaire" data-aller="3">Étape suivante : le modèle →</button></div>
+</section>
+
+<!-- ======================================================= 3. Modèle -->
+<section id="etape-3" hidden>
+  <h2>3. Construire le réseau de neurones (LSTM)</h2>
+  <p>Un ECG est un <strong>signal temporel</strong> : l'ordre des points compte. Un réseau <strong>récurrent</strong> (RNN)
+     lit le signal <strong>point par point</strong> et garde une <strong>mémoire</strong> de ce qu'il a déjà vu.
+     Le <strong>LSTM</strong> (<em>Long Short-Term Memory</em>) est un RNN dont des « portes » décident quoi retenir et quoi oublier.
+     Après le 140<sup>e</sup> point, sa mémoire résume tout le battement ; des couches <em>Dense</em> en tirent la décision.</p>
+  <div class="carte">
+    <div class="reglages">
+      <label class="reglage">Taille de la mémoire LSTM (neurones)
+        <select id="lstm-units"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
+      <label class="reglage">Couche Dense intermédiaire
+        <select id="dense-units"><option value="0">aucune</option><option>8</option><option selected>16</option><option>32</option></select></label>
+    </div>
+    <div id="schema" class="schema"></div>
+    <p>Nombre total de paramètres (poids) à apprendre : <strong id="nb-params">–</strong>
+       <span class="note">(modèle du notebook : 4 897)</span></p>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> à votre avis, un modèle avec plus de paramètres sera-t-il forcément meilleur ?
+     Vous pourrez tester à l'étape suivante.</p>
+  <details class="code" open><summary>Le code correspondant dans le notebook (mis à jour selon vos choix)</summary>
+<pre id="code-modele"></pre></details>
+  <div class="suite"><button data-aller="2">← Séparation</button><button class="primaire" data-aller="4">Étape suivante : entraîner →</button></div>
+</section>
+
+<!-- ======================================================= 4. Entraînement -->
+<section id="etape-4" hidden>
+  <h2>4. Entraîner le modèle</h2>
+  <p>À chaque <em>epoch</em>, le modèle voit tous les battements d'entraînement, par paquets (<em>batch</em>).
+     Après chaque paquet, il ajuste ses poids pour diminuer son erreur (la <em>perte</em>).
+     <strong>Le calcul se fait sur votre ordinateur</strong>, dans le navigateur : ne fermez pas l'onglet pendant l'entraînement.</p>
+  <div class="carte">
+    <p class="resume" id="resume-config"></p>
+    <div class="reglages">
+      <label class="reglage">Nombre d'epochs <span class="note">(notebook : 10)</span>
+        <input type="number" id="epochs" min="1" max="30" value="5"></label>
+      <label class="reglage">Taille des paquets (batch)
+        <select id="batch"><option>16</option><option>32</option><option selected>64</option><option>128</option></select></label>
+      <label class="reglage">Vitesse d'apprentissage
+        <select id="lr"><option value="0.0001">0,0001 (lente)</option><option value="0.001" selected>0,001 (standard)</option><option value="0.01">0,01 (rapide)</option></select></label>
+    </div>
+    <div class="actions">
+      <button class="primaire" id="lancer">▶ Lancer l'entraînement</button>
+      <button id="arreter" disabled>■ Arrêter</button>
+      <button id="pretraine">Utiliser le modèle pré-entraîné (notebook, 10 epochs)</button>
+    </div>
+    <div class="progression"><div id="barre-progression"></div></div>
+    <p id="etat-entrainement" class="note">Aucun modèle entraîné pour l'instant.</p>
+    <div class="deux-colonnes">
+      <div class="graphe moyen"><canvas id="graphe-perte"></canvas></div>
+      <div class="graphe moyen"><canvas id="graphe-precision"></canvas></div>
+    </div>
+    <pre id="journal" class="journal" hidden></pre>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> la précision de validation suit-elle celle d'entraînement ?
+     Que se passe-t-il avec une vitesse d'apprentissage de 0,01 ? avec 1 seule epoch ? avec 8 neurones LSTM ?</p>
+  <details class="code"><summary>Le code correspondant dans le notebook</summary>
+<pre>history = model.fit(Xtr3, ytr, validation_split=0.1, epochs=10, batch_size=64)</pre></details>
+  <div class="suite"><button data-aller="3">← Modèle</button><button class="primaire" data-aller="5">Étape suivante : évaluer →</button></div>
+</section>
+
+<!-- ======================================================= 5. Évaluation -->
+<section id="etape-5" hidden>
+  <h2>5. Évaluer sur les données de test</h2>
+  <div class="vide" data-sans-modele>Entraînez d'abord un modèle à l'étape 4 (ou chargez le modèle pré-entraîné).
+    <button data-aller="4">Aller à l'entraînement</button></div>
+  <div data-avec-modele hidden>
+    <p class="resume" id="eval-modele"></p>
+    <p>Le modèle donne pour chaque battement une <strong>probabilité d'être normal</strong>. Il prédit « normal » si elle dépasse le
+       <strong>seuil de décision</strong>. Ici, la classe « positive » (celle qu'on cherche à détecter) est l'<strong>arythmie</strong>.</p>
+    <label class="reglage carte">Seuil de décision : <strong><output id="seuil-val">0,50</output></strong>
+      <input type="range" id="seuil" min="0.05" max="0.95" step="0.05" value="0.5"></label>
+    <div class="deux-colonnes">
+      <div class="carte">
+        <h3>Matrice de confusion</h3>
+        <p class="note">Cliquez sur une case pour voir les battements correspondants.</p>
+        <div class="matrice" id="matrice"></div>
+        <div class="tuiles petites" id="tuiles-eval"></div>
+      </div>
+      <div class="carte">
+        <h3>Rapport de classification</h3>
+        <p class="note">Le même tableau que <code>classification_report</code> dans le notebook.</p>
+        <pre id="rapport" class="rapport"></pre>
+        <p class="note"><strong>precision</strong> : parmi les battements prédits dans cette classe, part de bonnes réponses.
+           <strong>recall</strong> (rappel, sensibilité) : part des battements de cette classe retrouvés.
+           <strong>f1-score</strong> : moyenne des deux. <strong>support</strong> : nombre de battements.</p>
+      </div>
+    </div>
+    <div class="carte">
+      <h3 id="titre-exemples">Exemples</h3>
+      <p class="note">En pointillés gris : le battement normal moyen, pour comparer.</p>
+      <div class="grille-exemples" id="exemples"></div>
+    </div>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> pourquoi un <strong>faux négatif</strong> (arythmie prédite normale) est-il plus grave
+     qu'un faux positif ? Comment faut-il bouger le seuil pour en avoir moins ? Qu'est-ce qu'on y perd ?</p>
+  <details class="code"><summary>Le code correspondant dans le notebook</summary>
+<pre>proba = model.predict(Xte3).ravel()
+pred = (proba > 0.5).astype(int)
+print(classification_report(yte, pred, target_names=['Arythmie (0)', 'Normal (1)']))
+cm = confusion_matrix(yte, pred)</pre></details>
+  <div class="suite"><button data-aller="4">← Entraînement</button><button class="primaire" data-aller="6">Étape suivante : tester un ECG →</button></div>
+</section>
+
+<!-- ======================================================= 6. Tester un ECG -->
+<section id="etape-6" hidden>
+  <h2>6. Tester un ECG</h2>
+  <div class="vide" data-sans-modele>Entraînez d'abord un modèle à l'étape 4 (ou chargez le modèle pré-entraîné).
+    <button data-aller="4">Aller à l'entraînement</button></div>
+  <div data-avec-modele hidden>
+    <div class="deux-colonnes etroite">
+      <div class="carte">
+        <h3>Choisir un ECG</h3>
+        <label class="depot" id="depot">
+          <input type="file" id="fichier" accept=".csv,.txt">
+          <span>📄 Déposez ici le fichier ECG fourni par l'enseignant<br><small>(.csv de 140 valeurs) ou cliquez pour le choisir</small></span>
+        </label>
+        <label class="reglage">… ou un ECG d'exemple
+          <select id="exemple"><option value="">(choisir)</option></select></label>
+        <div class="reglage">… ou un battement du jeu de test
+          <div class="ligne"><label for="indice-test">n°</label> <input type="number" id="indice-test" min="0" value="7">
+            <button id="indice-hasard">Au hasard</button></div></div>
+        <label><input type="checkbox" id="reveler"> Révéler le vrai diagnostic</label>
+        <label><input type="checkbox" id="moyennes-test"> Superposer les battements moyens</label>
+      </div>
+      <div class="carte">
+        <div class="graphe"><canvas id="graphe-test"></canvas></div>
+        <div id="resultat" class="resultat"></div>
+      </div>
+    </div>
+  </div>
+  <p class="a-vous">✍️ <strong>À vous :</strong> analysez les ECG fournis par l'enseignant. Le modèle se trompe-t-il ?
+     Sur quels battements hésite-t-il (probabilité proche du seuil) ?</p>
+  <details class="code"><summary>Le code correspondant dans le notebook</summary>
+<pre>i = 7   # &lt;-- change cet indice
+p = model.predict(Xte3[i:i+1]).ravel()[0]
+pred_lbl = 'NORMAL' if p &gt; 0.5 else 'ARYTHMIE'</pre></details>
+  <div class="suite"><button data-aller="5">← Évaluation</button><button class="primaire" data-aller="7">Étape suivante : questions →</button></div>
+</section>
+
+<!-- ======================================================= 7. Questions -->
+<section id="etape-7" hidden>
+  <h2>7. Questions à discuter</h2>
+  <ol class="questions">
+    <li>Le modèle a-t-il <strong>déjà vu</strong> les battements de test pendant l'entraînement ? Pourquoi est-ce important ?
+      <details><summary>Piste</summary>Étape 2. À l'étape 6, cochez « Révéler le vrai diagnostic » : le site indique si le
+        battement faisait partie de l'entraînement, de la validation ou du test. Comparez la précision d'entraînement et de test.</details></li>
+    <li>Pourquoi un <strong>faux négatif</strong> (arythmie prédite « normale ») est-il plus grave qu'un faux positif ?
+      <details><summary>Piste</summary>Que se passe-t-il pour le patient dans chacun des deux cas ? Regardez les exemples à l'étape 5.</details></li>
+    <li>Que se passe-t-il si on change le <strong>seuil</strong> de décision (0,5) ? Essayez 0,3 puis 0,7.
+      <details><summary>Piste</summary>Le modèle donne la probabilité d'être <em>normal</em>. Un seuil plus haut exige plus de
+        certitude avant de dire « normal »… Suivez les faux négatifs et les faux positifs dans la matrice.</details></li>
+    <li><strong>Limites</strong> : ici les battements sont déjà isolés et recentrés, et il n'y a qu'un seul type de signal.
+        Qu'est-ce qui changerait sur un vrai ECG continu de patient ?
+      <details><summary>Piste</summary>Bruit, plusieurs dérivations, rythme variable, il faut d'abord découper les battements,
+        patients différents de ceux de l'entraînement, autres pathologies…</details></li>
+    <li>Le modèle <strong>« comprend »</strong>-il le cœur, ou <strong>reconnaît-il des motifs</strong> dans le signal ?
+      <details><summary>Piste</summary>Le modèle sait-il ce qu'est une onde P ou un complexe QRS ? Que ferait-il d'un signal
+        qui n'est pas un ECG ?</details></li>
+    <li><strong>Bonus</strong> : comparez vos résultats avec vos voisins. Ont-ils exactement les mêmes chiffres ? Pourquoi ?
+      <details><summary>Piste</summary>Les poids de départ et l'ordre des paquets sont tirés au hasard à chaque entraînement.</details></li>
+  </ol>
+  <div class="suite"><button data-aller="6">← Tester un ECG</button></div>
+</section>
+
+</main>
+
+<footer class="pied contenu">
+  Données : ECG5000 (domaine public, PhysioNet / UCR Time Series Archive). Modèle : LSTM avec TensorFlow.js, calculé dans votre navigateur.
+  TP pédagogique CT IA L3 SV. <strong>Outil pédagogique : ne pas utiliser pour un diagnostic médical.</strong>
+</footer>
+</body>
+</html>
